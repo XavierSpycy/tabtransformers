@@ -10,7 +10,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
-from tabtransformers.dataset import TabularDataset
+from .dataset import TabularDataset
 
 def seed_everything(seed: int) -> None:
     """
@@ -38,6 +38,7 @@ def get_device() -> torch.device:
         return torch.device('cpu')
 
 def get_data(data_path: str, split_val: bool=True, 
+             data_files: Optional[Dict[str, str]]={'train': 'train.csv', 'test': 'test.csv'},
              val_params: Optional[Dict[str, Union[float, int]]]={'test_size': 0.05, 'random_state': None},
              index_col: Optional[str]=None) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
     """
@@ -53,11 +54,11 @@ def get_data(data_path: str, split_val: bool=True,
     - Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]: Train, test and validation data
     """
     if index_col is not None:
-        train_data = pd.read_csv(os.path.join(data_path, 'train.csv'), index_col=index_col)
-        test_data = pd.read_csv(os.path.join(data_path, 'test.csv'), index_col=index_col)
+        train_data = pd.read_csv(os.path.join(data_path, data_files['train']), index_col=index_col)
+        test_data = pd.read_csv(os.path.join(data_path, data_files['test']), index_col=index_col)
     else:
-        train_data = pd.read_csv(os.path.join(data_path, 'train.csv'))
-        test_data = pd.read_csv(os.path.join(data_path, 'test.csv'))
+        train_data = pd.read_csv(os.path.join(data_path, data_files['train']))
+        test_data = pd.read_csv(os.path.join(data_path, data_files['test']))
     
     if split_val:
         if val_params is None:
@@ -112,13 +113,13 @@ def get_data_loader(train_dataset, test_dataset, val_dataset,
     test_loader = DataLoader(test_dataset, batch_size=inference_batch_size, shuffle=False)
     return train_loader, test_loader, val_loader
 
-def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'classification'],
+def train(model: torch.nn.Module, epochs: int, output_dim: int,
           train_loader: DataLoader, val_loader: DataLoader, 
           optimizer: torch.optim.Optimizer, criterion: torch.nn.modules.loss._Loss, 
           scheduler: Optional[torch.optim.lr_scheduler._LRScheduler]=None, 
           custom_metric: Optional[Callable[[Tuple[np.ndarray, np.ndarray]], float]]=None, 
           maximize: bool=False, scheduler_custom_metric: bool=False, 
-          early_stopping_patience=5, early_stopping_start_from: int=0,
+          early_stopping: bool=True, early_stopping_patience=5, early_stopping_start_from: int=0,
           save_model_path: Optional[str]=None):
     """
     Train the model
@@ -126,7 +127,7 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
     Parameters:
     - model (torch.nn.Module): Model to be trained
     - epochs (int): Number of epochs
-    - task (Literal['regression', 'classification']): Task type
+    - output_dim (int): Output dimension
     - train_loader (DataLoader): Train data loader
     - val_loader (DataLoader): Validation data loader
     - optimizer (torch.optim.Optimizer): Optimizer
@@ -158,7 +159,7 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
         for _, (categorical_data, continuous_data, target) in enumerate(train_loader):
             categorical_data = categorical_data.to(device)
             continuous_data = continuous_data.to(device)
-            if task == 'regression':
+            if output_dim == 1:
                 target = target.unsqueeze(1)
             target = target.to(device)
             optimizer.zero_grad()
@@ -185,16 +186,16 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
                 for _, (categorical_data, continuous_data, target) in enumerate(val_loader):
                     categorical_data = categorical_data.to(device)
                     continuous_data = continuous_data.to(device)
-                    if task == 'regression':
+                    if output_dim == 1:
                         y_true.extend(target.cpu().numpy().reshape(-1).tolist())
                         target = target.unsqueeze(1)
-                    elif task == 'classification':
+                    else:
                         y_true = np.concatenate([y_true, target.cpu().numpy()])
                     target = target.to(device)
                     output = model(categorical_data, continuous_data)
-                    if task == 'regression':
+                    if output_dim == 1:
                         y_pred.extend(output.cpu().numpy().reshape(-1).tolist())
-                    elif task == 'classification':
+                    else:
                         y_pred = np.concatenate([y_pred, torch.argmax(output, dim=1).cpu().numpy()])
                     loss = criterion(output, target)
                     val_loss += loss.item()
@@ -216,20 +217,21 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
         
         if not custom_metric:
             maximize = False
-        if not maximize and val_metric < best_metric:
-            best_metric = val_metric
-            best_model_params = model.state_dict()
-            early_stopping_counter = 0
-        elif maximize and val_metric > best_metric:
-            best_metric = val_metric
-            best_model_params = model.state_dict()
-            early_stopping_counter = 0
-        else:
-            if epoch >= early_stopping_start_from:
-                early_stopping_counter += 1
-            if early_stopping_counter == early_stopping_patience:
-                tqdm.write('Early stopping')
-                break
+        if early_stopping:
+            if not maximize and val_metric < best_metric:
+                best_metric = val_metric
+                best_model_params = model.state_dict()
+                early_stopping_counter = 0
+            elif maximize and val_metric > best_metric:
+                best_metric = val_metric
+                best_model_params = model.state_dict()
+                early_stopping_counter = 0
+            else:
+                if epoch >= early_stopping_start_from:
+                    early_stopping_counter += 1
+                if early_stopping_counter == early_stopping_patience:
+                    tqdm.write('Early stopping')
+                    break
     
     model.load_state_dict(best_model_params)
 
@@ -239,20 +241,22 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
     
     return train_loss_history, val_loss_history
 
-def inference(model: torch.nn.Module, test_loader: DataLoader, task: Literal['regression', 'classification']='regression') -> np.ndarray:
+def inference(model: torch.nn.Module, test_loader: DataLoader, output_dim: int) -> np.ndarray:
     """
     Make predictions using the model
 
     Parameters:
     - model (torch.nn.Module): Model
     - test_loader (DataLoader): Test data loader
-    - task (Literal['regression', 'classification']): Task type
+    - output_dim (int): Output dimension
 
     Returns:
     - np.ndarray: Predictions
     """
-    if task not in {'regression', 'classification'}:
-        raise ValueError(f'Task {task} is not supported yet')
+    
+    if output_dim < 1 or not isinstance(output_dim, int):
+        raise ValueError('output_dim must be an integer greater than 0')
+    
     model.eval()
     device = get_device()
     predictions = []
@@ -262,10 +266,10 @@ def inference(model: torch.nn.Module, test_loader: DataLoader, task: Literal['re
             continuous_data = continuous_data.to(device)
             output = model(categorical_data, continuous_data)
             predictions.append(output)
-        if task == 'classification':
+        if output_dim != 1:
             predictions = torch.cat(predictions, dim=0)
             predictions = torch.argmax(predictions, dim=1).cpu().numpy()
-        elif task == 'regression':
+        else:
             predictions = torch.cat(predictions, dim=0).cpu().numpy().reshape(-1)
     return predictions
 

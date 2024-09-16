@@ -43,7 +43,7 @@ def train_model():
     val_params = {'test_size': 0.05, 'random_state': seed}
     train_data, test_data, val_data = \
         get_data('data', split_val=True, val_params=val_params, index_col='id')
-
+    
     train_dataset, test_dataset, val_dataset = \
         get_dataset(
         train_data, test_data, val_data, target_name, 
