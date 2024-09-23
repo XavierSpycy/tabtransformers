@@ -1,0 +1,99 @@
+# task-specific configuration
+# replace it with your own data
+target_name: Rings
+# replace them all with your own data
+categorical_features:
+  - Sex
+  # ...
+# replace them all with your own data
+continuous_features: 
+  - Length
+  - Diameter
+  - Height
+  - Whole weight
+  - Whole weight.1
+  - Whole weight.2
+  - Shell weight
+  # ...
+# disregard if you don't have an index column
+index_col: id
+# replace them all with your own data or set to null if you don't have any
+target_mapping: null
+  # class_1: 0
+  # class_2: 1
+  # class_3: 2
+  # ...
+
+# random seed
+seed: 0
+
+# data - only supports csv files at the moment
+data_dir: data
+train_file: train.csv
+test_file: test.csv
+# refer to: https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html#sklearn.model_selection.train_test_split
+train_test_split: 
+  test_size: 0.05
+  shuffle: true
+  # ... add some other parameters if needed expect for random_state
+
+# model and related hypterparameters
+model_class: tab_transformer # or feature_tokenizer_transformer
+model_kwargs:
+  output_dim: 1 # number of classes for classification tasks; 1 for regression tasks
+  embedding_dim: 64
+  nhead: 8
+  num_layers: 3 # number of encoder layers
+  dim_feedforward: 128
+  mlp_hidden_dims: 
+    - 32
+    # can continue to add more hidden layers in the format of e.g. "- 64"; must be a list
+  # 'relu' or 'gelu'
+  # check: https://pytorch.org/docs/stable/generated/torch.nn.TransformerEncoderLayer.html#torch.nn.TransformerEncoderLayer for more details
+  activation: 'gelu'
+  attn_dropout_rate: 0.01
+  ffn_dropout_rate: 0.01
+
+# loss function
+# pass the class name of the loss function in PyTorch in lowercase; split by '_'
+loss_function: mse
+# pass the parameters of the loss function in a dictionary format; refer to PyTorch documentation
+loss_kwargs: null
+
+# optimizer
+optim: adamw # pass the class name of the optimizer in PyTorch in lowercase
+optim_kwargs:
+  lr: 1.0e-3 # learning_rate
+  weight_decay: 0.1
+  # Can add more parameters if needed refer to PyTorch documentation
+
+# learning rate scheduler
+# supports almost all the learning rate schedulers in PyTorch 
+# except for LambdaScheduler, MultiplicativeLR, ChainedScheduler and SequentialLR
+lr_scheduler: reduce_on_plateau
+lr_scheduler_kwargs: 
+  mode: min
+  factor: 0.1
+  patience: 10
+# set to true if you want to use a custom metric for the learning rate scheduler
+lr_scheduler_by_custom_metric: true
+
+# training hyperparameters
+train_batch_size: 64
+eval_batch_size: 512
+epochs: 200
+
+# early stopping
+early_stopping: true
+early_stopping_patience: 5
+early_stopping_start_from: 5
+
+# evaluation metric
+# temporarily supports only f1_score_macro and root_mean_squared_logarithmic_error
+custom_metric: root_mean_squared_logarithmic_error
+# set to false if the lower value is better
+is_greater_better: false
+
+# output
+to_submssion: true
+submission_file: submission.csv

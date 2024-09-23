@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from typing import Optional, Callable, Tuple, Literal, Union, Dict, List
 
@@ -10,7 +11,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 
-from tabtransformers.dataset import TabularDataset
+from .dataset import TabularDataset
 
 def seed_everything(seed: int) -> None:
     """
@@ -38,6 +39,7 @@ def get_device() -> torch.device:
         return torch.device('cpu')
 
 def get_data(data_path: str, split_val: bool=True, 
+             data_files: Optional[Dict[str, str]]={'train': 'train.csv', 'test': 'test.csv'},
              val_params: Optional[Dict[str, Union[float, int]]]={'test_size': 0.05, 'random_state': None},
              index_col: Optional[str]=None) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
     """
@@ -53,11 +55,11 @@ def get_data(data_path: str, split_val: bool=True,
     - Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]: Train, test and validation data
     """
     if index_col is not None:
-        train_data = pd.read_csv(os.path.join(data_path, 'train.csv'), index_col=index_col)
-        test_data = pd.read_csv(os.path.join(data_path, 'test.csv'), index_col=index_col)
+        train_data = pd.read_csv(os.path.join(data_path, data_files['train']), index_col=index_col)
+        test_data = pd.read_csv(os.path.join(data_path, data_files['test']), index_col=index_col)
     else:
-        train_data = pd.read_csv(os.path.join(data_path, 'train.csv'))
-        test_data = pd.read_csv(os.path.join(data_path, 'test.csv'))
+        train_data = pd.read_csv(os.path.join(data_path, data_files['train']))
+        test_data = pd.read_csv(os.path.join(data_path, data_files['test']))
     
     if split_val:
         if val_params is None:
@@ -69,7 +71,7 @@ def get_data(data_path: str, split_val: bool=True,
     return train_data, test_data, val_data
 
 def get_dataset(train_data: pd.DataFrame, test_data: pd.DataFrame, val_data: Optional[pd.DataFrame],
-                    target_name: str, target_dtype: Union[Literal['regression', 'classification'], torch.dtype],
+                    target_name: str, output_dim: int,
                     categorical_features: Optional[List[str]], continuous_features: Optional[List[str]]) \
                         -> Tuple[TabularDataset, TabularDataset, TabularDataset]:
     """
@@ -80,16 +82,16 @@ def get_dataset(train_data: pd.DataFrame, test_data: pd.DataFrame, val_data: Opt
     - test_data (pd.DataFrame): Test data
     - val_data (Optional[pd.DataFrame]): Validation data
     - target_name (str): Target column name
-    - target_dtype (Union[Literal['regression', 'classification'], torch.dtype]): Target data type
+    - output_dim (int): Number of output dimensions
     - categorical_features (Optional[List[str]]): Categorical feature column names
     - continuous_features (Optional[List[str]]): Continuous feature column names
 
     Returns:
     - Tuple[TabularDataset, TabularDataset, TabularDataset]: Train, test and validation datasets
     """
-    train_dataset = TabularDataset(train_data, target_name, target_dtype, categorical_features, continuous_features)
-    val_dataset = TabularDataset(val_data, target_name, target_dtype, categorical_features, continuous_features)
-    test_dataset = TabularDataset(test_data, None, target_dtype, categorical_features, continuous_features)
+    train_dataset = TabularDataset(train_data, target_name, output_dim, categorical_features, continuous_features)
+    val_dataset = TabularDataset(val_data, target_name, output_dim, categorical_features, continuous_features)
+    test_dataset = TabularDataset(test_data, None, output_dim, categorical_features, continuous_features)
     return train_dataset, test_dataset, val_dataset
 
 def get_data_loader(train_dataset, test_dataset, val_dataset, 
@@ -112,13 +114,13 @@ def get_data_loader(train_dataset, test_dataset, val_dataset,
     test_loader = DataLoader(test_dataset, batch_size=inference_batch_size, shuffle=False)
     return train_loader, test_loader, val_loader
 
-def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'classification'],
+def train(model: torch.nn.Module, epochs: int, output_dim: int,
           train_loader: DataLoader, val_loader: DataLoader, 
           optimizer: torch.optim.Optimizer, criterion: torch.nn.modules.loss._Loss, 
           scheduler: Optional[torch.optim.lr_scheduler._LRScheduler]=None, 
           custom_metric: Optional[Callable[[Tuple[np.ndarray, np.ndarray]], float]]=None, 
           maximize: bool=False, scheduler_custom_metric: bool=False, 
-          early_stopping_patience=5, early_stopping_start_from: int=0,
+          early_stopping: bool=True, early_stopping_patience=5, early_stopping_start_from: int=0,
           save_model_path: Optional[str]=None):
     """
     Train the model
@@ -126,7 +128,7 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
     Parameters:
     - model (torch.nn.Module): Model to be trained
     - epochs (int): Number of epochs
-    - task (Literal['regression', 'classification']): Task type
+    - output_dim (int): Output dimension
     - train_loader (DataLoader): Train data loader
     - val_loader (DataLoader): Validation data loader
     - optimizer (torch.optim.Optimizer): Optimizer
@@ -142,6 +144,9 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
     Returns:
     - Tuple[List[float], List[float]]: Training and validation loss history
     """
+
+    logging.info(f'Training start time: {time.time()}')
+
     device = get_device()
     logging.info(f'Device: {device}')
 
@@ -158,13 +163,14 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
         for _, (categorical_data, continuous_data, target) in enumerate(train_loader):
             categorical_data = categorical_data.to(device)
             continuous_data = continuous_data.to(device)
-            if task == 'regression':
+            if output_dim == 1:
                 target = target.unsqueeze(1)
             target = target.to(device)
+
             optimizer.zero_grad()
 
             if device.type == 'cuda':
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     output = model(categorical_data, continuous_data)
                     loss = criterion(output, target)
             else:
@@ -185,16 +191,16 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
                 for _, (categorical_data, continuous_data, target) in enumerate(val_loader):
                     categorical_data = categorical_data.to(device)
                     continuous_data = continuous_data.to(device)
-                    if task == 'regression':
+                    if output_dim == 1:
                         y_true.extend(target.cpu().numpy().reshape(-1).tolist())
                         target = target.unsqueeze(1)
-                    elif task == 'classification':
+                    else:
                         y_true = np.concatenate([y_true, target.cpu().numpy()])
                     target = target.to(device)
                     output = model(categorical_data, continuous_data)
-                    if task == 'regression':
+                    if output_dim == 1:
                         y_pred.extend(output.cpu().numpy().reshape(-1).tolist())
-                    elif task == 'classification':
+                    else:
                         y_pred = np.concatenate([y_pred, torch.argmax(output, dim=1).cpu().numpy()])
                     loss = criterion(output, target)
                     val_loss += loss.item()
@@ -210,26 +216,27 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
                 model.train()
 
         if custom_metric is not None:
-            tqdm.write(f'Epoch: {epoch}, Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}, Val Metric: {val_metric:.4f}')
+            tqdm.write(f'Epoch: {epoch+1}, Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}, Val Metric: {val_metric:.4f}')
         else:
-            tqdm.write(f'Epoch: {epoch}, Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}')
+            tqdm.write(f'Epoch: {epoch+1}, Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}')
         
         if not custom_metric:
             maximize = False
-        if not maximize and val_metric < best_metric:
-            best_metric = val_metric
-            best_model_params = model.state_dict()
-            early_stopping_counter = 0
-        elif maximize and val_metric > best_metric:
-            best_metric = val_metric
-            best_model_params = model.state_dict()
-            early_stopping_counter = 0
-        else:
-            if epoch >= early_stopping_start_from:
-                early_stopping_counter += 1
-            if early_stopping_counter == early_stopping_patience:
-                tqdm.write('Early stopping')
-                break
+        if early_stopping:
+            if not maximize and val_metric < best_metric:
+                best_metric = val_metric
+                best_model_params = model.state_dict()
+                early_stopping_counter = 0
+            elif maximize and val_metric > best_metric:
+                best_metric = val_metric
+                best_model_params = model.state_dict()
+                early_stopping_counter = 0
+            else:
+                if epoch >= early_stopping_start_from:
+                    early_stopping_counter += 1
+                if early_stopping_counter == early_stopping_patience:
+                    tqdm.write('Early stopping')
+                    break
     
     model.load_state_dict(best_model_params)
 
@@ -237,22 +244,26 @@ def train(model: torch.nn.Module, epochs: int, task: Literal['regression', 'clas
         torch.save(model.state_dict(), save_model_path)
         logging.info('Model saved')
     
+    logging.info(f'Training end time: {time.time()}')
+
     return train_loss_history, val_loss_history
 
-def inference(model: torch.nn.Module, test_loader: DataLoader, task: Literal['regression', 'classification']='regression') -> np.ndarray:
+def inference(model: torch.nn.Module, test_loader: DataLoader, output_dim: int) -> np.ndarray:
     """
     Make predictions using the model
 
     Parameters:
     - model (torch.nn.Module): Model
     - test_loader (DataLoader): Test data loader
-    - task (Literal['regression', 'classification']): Task type
+    - output_dim (int): Output dimension
 
     Returns:
     - np.ndarray: Predictions
     """
-    if task not in {'regression', 'classification'}:
-        raise ValueError(f'Task {task} is not supported yet')
+    
+    if output_dim < 1 or not isinstance(output_dim, int):
+        raise ValueError('output_dim must be an integer greater than 0')
+    
     model.eval()
     device = get_device()
     predictions = []
@@ -262,10 +273,10 @@ def inference(model: torch.nn.Module, test_loader: DataLoader, task: Literal['re
             continuous_data = continuous_data.to(device)
             output = model(categorical_data, continuous_data)
             predictions.append(output)
-        if task == 'classification':
+        if output_dim != 1:
             predictions = torch.cat(predictions, dim=0)
             predictions = torch.argmax(predictions, dim=1).cpu().numpy()
-        elif task == 'regression':
+        else:
             predictions = torch.cat(predictions, dim=0).cpu().numpy().reshape(-1)
     return predictions
 

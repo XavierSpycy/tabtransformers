@@ -3,7 +3,7 @@ from typing import Dict, List
 import torch
 import torch.nn as nn
 
-from tabtransformers.models.base_blocks import Activation, ColumnEmbedding
+from .base_blocks import Activation, ColumnEmbedding
 
 class CatEncoder(nn.Module):
     def __init__(self, 

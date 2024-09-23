@@ -6,6 +6,7 @@ Source: [TabTransformer: Tabular Data Modeling Using Contextual Embeddings](http
 
 # tabtransformers
 Table of content
+- [Latest Upgrade](#latest-upgrade)
 - [Motivation](#motivation)
 - [Modules](#modules)
   - [Models](#models)
@@ -17,6 +18,11 @@ Table of content
 - [License](#license)
 - [Contribution](#contribution)
 - [Reference](#reference)
+
+## Latest Upgrade
+In our latest update, we've implemented a unified training process that supports both regression and classification tasks within the same Python script. 
+
+For any specific dataset, **all you need** to do is adjust the configuration file, and you can effortlessly apply the models in this repository to your own task.
 
 ## Motivation
 Tabular data plays a pivotal role in many Kaggle competitions, highlighting the need for a versatile framework that integrates various architectures tailored for such datasets. 
@@ -56,13 +62,29 @@ Provides a PyTorch-compatible dataset implementation for streamlined data handli
 Introduces custom metrics specifically designed for Kaggle competitions.
 
 ## Usage
-Detailed examples demonstrating the usage of our models can be found in the [template](templates/) directory.
+Detailed examples demonstrating the usage of our models can be found in the [template](templates/) directory. Please ensure that the `.csv` files are placed in the `data` directory by default.
 
-### Classification
-For classification tasks, refer to [classification](templates/train_classification.py).
+### Regression Task
+For the regression task, we use the [Regression with an Abalone Dataset](https://www.kaggle.com/competitions/playground-series-s4e4) as an example.
 
-### Regression
-For regression tasks, refer to [regression](templates/train_regression.py).
+We provide a feasible solution outlined in the configuration file [templates/config_regression.yaml](templates/config_regression.yaml).  Achieving SOTA performance requires significant effort, tricks, and time.
+
+To train a TabTransformer model, use the following command:
+
+```bash
+python3 train.py --config templates/config_regression.yaml
+```
+
+### Classification Task
+Similarly, we use the [ML Olympiad - Predicting Earthquake Damage](https://www.kaggle.com/competitions/ml-olympiad-predicting-earthquake-damage) dataset to illustrate the classification task.
+
+Rather than fully tackling this complex problem, our goal is to demonstrate how to use the training process. Thus, we only use a subset of the features as inputs.
+
+You can train the model in the same way:
+
+```bash
+python3 train.py --config templates/config_regression.yaml
+```
 
 ## Conclusion
 We present an end-to-end, PyTorch-based Transformer framework specifically designed for tabular data. Accompanied by pre-integrated templates and functions, our framework aims to streamline your workflows without sacrificing flexibility. We believe it will prove to be a valuable asset for your data modeling tasks.
