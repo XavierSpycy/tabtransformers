@@ -6,8 +6,9 @@ from torch.utils.data import Dataset
 
 class TabularDataset(Dataset):
     def __init__(self, 
-                 dataframe: pd.DataFrame, target: Optional[str]=None, 
-                 target_dtype: Union[Literal['regression', 'classification'], torch.dtype]=torch.long,
+                 dataframe: pd.DataFrame, 
+                 target: Optional[str], 
+                 output_dim: int,
                  categorical_features: Optional[List[str]]=None,
                  continuous_features: Optional[List[str]]=None,):
         """
@@ -16,21 +17,21 @@ class TabularDataset(Dataset):
         Parameters:
         - dataframe: pd.DataFrame. Input data.
         - target: str. Target column name.
-        - target_dtype: Union[Literal['regression', 'classification'], torch.dtype]. Target data type.
+        - output_dim: int. Number of output classes.
         - categorical_features: Optional[List[str]]. List of categorical feature column names.
         - continuous_features: Optional[List[str]]. List of continuous feature column names.
         """
         if categorical_features is None and continuous_features is None:
             raise ValueError('At least one of categorical_features and continuous_features must be provided')
         
-        if target_dtype == 'classification':
-            self.target_dtype = torch.long
-        elif target_dtype == 'regression':
+        if not isinstance(output_dim, int):
+            raise ValueError('output_dim must be an integer')
+        elif output_dim <= 0:
+            raise ValueError('output_dim must be a positive integer')
+        elif output_dim == 1:
             self.target_dtype = torch.float
-        elif isinstance(target_dtype, torch.dtype):
-            self.target_dtype = target_dtype
         else:
-            raise ValueError('target_dtype must be either "categorical" or "continuous"')
+            self.target_dtype = torch.long
         
         self.dataset_length = len(dataframe)
         self.vocabulary = {}

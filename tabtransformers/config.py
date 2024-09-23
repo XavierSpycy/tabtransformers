@@ -14,31 +14,31 @@ def load_config(config_path: str):
         config = yaml.safe_load(file)
     return config
 
-def get_model(config: Dict[str, Any], vocabulary: Dict):
-    if isinstance((model_name := config.get("model")), str):
+def get_model(config: Dict[str, Any], vocabulary: Dict,  num_continuous_features: int):
+    if not isinstance((model_class := config.get("model_class")), str):
         raise ValueError("model must be a string")
 
     if (model_kwargs := config.get("model_kwargs")) is None:
         model_kwargs = {}
-    elif not isinstance(model_kwargs, Dict[str, Any]):
+    elif isinstance(model_kwargs, dict):
         model_kwargs = model_kwargs
     else:
         raise ValueError("model_kwargs must be a dictionary or None")
 
-    if model_name == "tabular_transformer":
-        return TabularTransformer(vocabulary=vocabulary, **model_kwargs)
-    elif model_name == "feature_tokenizer_transformer":
-        return FeatureTokenizerTransformer(vocabulary=vocabulary, **model_kwargs)
+    if model_class == "tab_transformer":
+        return TabularTransformer(vocabulary=vocabulary, num_continuous_features=num_continuous_features, **model_kwargs)
+    elif model_class == "feature_tokenizer_transformer":
+        return FeatureTokenizerTransformer(vocabulary=vocabulary, num_continuous_features=num_continuous_features, **model_kwargs)
     else:
         raise ValueError("model must be supported by tabtransformers")
     
 def get_loss_function(config: Dict[str, Any]):
-    if isinstance((loss_function_name := config.get("loss_function"), str)):
+    if not isinstance((loss_function_name := config.get("loss_function")), str):
             raise ValueError("loss_function must be a string")
 
     if (loss_kwargs := config.get("loss_kwargs")) is None:
         loss_kwargs = {}
-    elif not isinstance(loss_kwargs, Dict[str, Any]):
+    elif isinstance(loss_kwargs, dict):
         loss_kwargs = loss_kwargs
     else:
         raise ValueError("loss_kwargs must be a dictionary or None")
@@ -89,12 +89,12 @@ def get_loss_function(config: Dict[str, Any]):
         raise ValueError("loss_function must be supported by PyTorch")
 
 def get_optimizer_object(config: Dict[str, Any]):
-    if isinstance((optimizer_name := config.get("optimizer")), str):
+    if not isinstance((optimizer_name := config.get("optim")), str):
         raise ValueError("optimizer must be a string")
 
-    if (optimizer_kwargs := config.get("optimizer_kwargs")) is None:
+    if (optimizer_kwargs := config.get("optim_kwargs")) is None:
         optimizer_kwargs = {}
-    elif not isinstance(optimizer_kwargs, Dict[str, Any]):
+    elif isinstance(optimizer_kwargs, dict):
         optimizer_kwargs = optimizer_kwargs
     else:
         raise ValueError("optimizer_kwargs must be a dictionary or None")

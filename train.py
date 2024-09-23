@@ -24,8 +24,6 @@ def main(args):
 
     seed_everything(config['seed'])
 
-    task = 'regression'
-
     val_params = config['train_test_split']
     val_params['random_state'] = config['seed']
 
@@ -35,12 +33,16 @@ def main(args):
                  index_col=config['index_col'])
     
     if config['target_mapping'] is not None:
+        reverse_target_mapping = {v: k for k, v in config['target_mapping'].items()}
         train_data[config['target_name']] = train_data[config['target_name']].replace(config['target_mapping'])
+        val_data[config['target_name']] = val_data[config['target_name']].replace(config['target_mapping'])
+    else:
+        reverse_target_mapping = None
 
     train_dataset, test_dataset, val_dataset = \
         get_dataset(
         train_data, test_data, val_data, config['target_name'], 
-        task, config['categorical_features'], config['continuous_features'])
+        config['model_kwargs']['output_dim'], config['categorical_features'], config['continuous_features'])
     
     train_loader, test_loader, val_loader = \
         get_data_loader(
@@ -48,7 +50,7 @@ def main(args):
         train_batch_size=config['train_batch_size'], 
         inference_batch_size=config['eval_batch_size'])
 
-    model = get_model(vocabulary=train_dataset.get_vocabulary(), **config['model_kwargs'])
+    model = get_model(config, vocabulary=train_dataset.get_vocabulary(), num_continuous_features=len(config['continuous_features']))
     
     optimizer = get_optimizer_object(config)(model.parameters(), **config['optim_kwargs'])
     scheduler = get_lr_scheduler_object(config)(optimizer, **config['lr_scheduler_kwargs'])
@@ -66,6 +68,8 @@ def main(args):
     
     plot_learning_curve(train_history, val_history)
     predictions = inference(model, test_loader, config['model_kwargs']['output_dim'])
+    if reverse_target_mapping is not None:
+        predictions = [reverse_target_mapping[p] for p in predictions]
     if config['submission_file']:
         to_submssion_csv(
             predictions, test_data, 

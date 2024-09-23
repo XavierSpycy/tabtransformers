@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from typing import Optional, Callable, Tuple, Literal, Union, Dict, List
 
@@ -70,7 +71,7 @@ def get_data(data_path: str, split_val: bool=True,
     return train_data, test_data, val_data
 
 def get_dataset(train_data: pd.DataFrame, test_data: pd.DataFrame, val_data: Optional[pd.DataFrame],
-                    target_name: str, target_dtype: Union[Literal['regression', 'classification'], torch.dtype],
+                    target_name: str, output_dim: int,
                     categorical_features: Optional[List[str]], continuous_features: Optional[List[str]]) \
                         -> Tuple[TabularDataset, TabularDataset, TabularDataset]:
     """
@@ -81,16 +82,16 @@ def get_dataset(train_data: pd.DataFrame, test_data: pd.DataFrame, val_data: Opt
     - test_data (pd.DataFrame): Test data
     - val_data (Optional[pd.DataFrame]): Validation data
     - target_name (str): Target column name
-    - target_dtype (Union[Literal['regression', 'classification'], torch.dtype]): Target data type
+    - output_dim (int): Number of output dimensions
     - categorical_features (Optional[List[str]]): Categorical feature column names
     - continuous_features (Optional[List[str]]): Continuous feature column names
 
     Returns:
     - Tuple[TabularDataset, TabularDataset, TabularDataset]: Train, test and validation datasets
     """
-    train_dataset = TabularDataset(train_data, target_name, target_dtype, categorical_features, continuous_features)
-    val_dataset = TabularDataset(val_data, target_name, target_dtype, categorical_features, continuous_features)
-    test_dataset = TabularDataset(test_data, None, target_dtype, categorical_features, continuous_features)
+    train_dataset = TabularDataset(train_data, target_name, output_dim, categorical_features, continuous_features)
+    val_dataset = TabularDataset(val_data, target_name, output_dim, categorical_features, continuous_features)
+    test_dataset = TabularDataset(test_data, None, output_dim, categorical_features, continuous_features)
     return train_dataset, test_dataset, val_dataset
 
 def get_data_loader(train_dataset, test_dataset, val_dataset, 
@@ -143,6 +144,9 @@ def train(model: torch.nn.Module, epochs: int, output_dim: int,
     Returns:
     - Tuple[List[float], List[float]]: Training and validation loss history
     """
+
+    logging.info(f'Training start time: {time.time()}')
+
     device = get_device()
     logging.info(f'Device: {device}')
 
@@ -162,10 +166,11 @@ def train(model: torch.nn.Module, epochs: int, output_dim: int,
             if output_dim == 1:
                 target = target.unsqueeze(1)
             target = target.to(device)
+
             optimizer.zero_grad()
 
             if device.type == 'cuda':
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     output = model(categorical_data, continuous_data)
                     loss = criterion(output, target)
             else:
@@ -211,9 +216,9 @@ def train(model: torch.nn.Module, epochs: int, output_dim: int,
                 model.train()
 
         if custom_metric is not None:
-            tqdm.write(f'Epoch: {epoch}, Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}, Val Metric: {val_metric:.4f}')
+            tqdm.write(f'Epoch: {epoch+1}, Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}, Val Metric: {val_metric:.4f}')
         else:
-            tqdm.write(f'Epoch: {epoch}, Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}')
+            tqdm.write(f'Epoch: {epoch+1}, Train Loss: {loss.item():.4f}, Val Loss: {val_loss:.4f}')
         
         if not custom_metric:
             maximize = False
@@ -239,6 +244,8 @@ def train(model: torch.nn.Module, epochs: int, output_dim: int,
         torch.save(model.state_dict(), save_model_path)
         logging.info('Model saved')
     
+    logging.info(f'Training end time: {time.time()}')
+
     return train_loss_history, val_loss_history
 
 def inference(model: torch.nn.Module, test_loader: DataLoader, output_dim: int) -> np.ndarray:
